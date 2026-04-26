@@ -70,7 +70,7 @@ jobs:
 
     - name: Start services with Docker Compose
       run: |
-        docker-compose up -d
+        docker compose up -d
         sleep 15
 
     # ⚠️ FIX 3: avoid port conflict (optional but safer)
@@ -94,13 +94,13 @@ jobs:
     - name: Check service logs
       if: always()
       run: |
-        docker-compose logs app
-        docker-compose logs nginx
+        docker compose logs app
+        docker compose logs nginx
 
     - name: Cleanup Docker Compose
       if: always()
       run: |
-        docker-compose down -v
+        docker compose down -v
         docker system prune -f
 
   build-and-push:
