@@ -34,7 +34,7 @@ jobs:
         npm test
         kill $APP_PID
 
-    # 🔥 FIX: full cleanup before docker
+    # 🔥 Clean environment before Docker
     - name: Cleanup Docker system
       run: |
         docker compose down -v || true
@@ -44,7 +44,7 @@ jobs:
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
 
-    # Build image locally
+    # Build image
     - name: Build Docker image
       uses: docker/build-push-action@v5
       with:
@@ -53,31 +53,30 @@ jobs:
         tags: ${{ env.DOCKER_IMAGE_NAME }}:test
         load: true
 
-    # Run container WITHOUT host port (FIX)
+    # Run container (NO curl inside container)
     - name: Test Docker image
       run: |
-        docker run -d --name test-container ${{ env.DOCKER_IMAGE_NAME }}:test
+        docker run -d -p 3001:3000 --name test-container ${{ env.DOCKER_IMAGE_NAME }}:test
         sleep 10
-        docker exec test-container curl -f http://localhost:3000/health || exit 1
+        curl -f http://localhost:3001/health || exit 1
         docker stop test-container
         docker rm test-container
 
-    # Replace build with image
-    - name: Prepare docker compose
+    # Prepare compose
+    - name: Prepare Docker Compose
       run: |
         sed -i 's/build: \./image: ${{ env.DOCKER_IMAGE_NAME }}:test/' docker-compose.yml
 
-    # Start compose (NO PORT CONFLICT)
-    - name: Start services with Docker Compose
+    - name: Start services
       run: |
         docker compose up -d
         sleep 15
 
-    # Test using internal network (FIX)
+    # FIX: external testing (NO curl inside container)
     - name: Test services
       run: |
-        docker exec docker-cicd-demo-app-1 curl -f http://localhost:3000/health || exit 1
-        docker exec docker-cicd-demo-nginx-1 curl -f http://localhost/health || exit 1
+        curl -f http://localhost:3000/health || exit 1
+        curl -f http://localhost:8080/health || exit 1
 
     - name: Show logs
       if: always()
