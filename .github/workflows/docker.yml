@@ -60,6 +60,7 @@ jobs:
         context: .
         push: false
         tags: ${{ env.DOCKER_IMAGE_NAME }}:test
+        load: true 
         cache-from: type=gha
         cache-to: type=gha,mode=max
     
