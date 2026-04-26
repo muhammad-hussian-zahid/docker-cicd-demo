@@ -68,13 +68,13 @@ jobs:
     - name: Test Docker image
       run: |
         # Run container in background
-        docker run -d -p 3000:3000 --name test-container ${{ env.DOCKER_IMAGE_NAME }}:test
+        docker run -d -p 3001:3000 --name test-container ${{ env.DOCKER_IMAGE_NAME }}:test
         
         # Wait for container to start
         sleep 10
         
         # Test the container
-        curl -f http://localhost:3000/health || exit 1
+        curl -f http://localhost:3001/health || exit 1
         
         # Clean up
         docker stop test-container
