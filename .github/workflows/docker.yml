@@ -8,7 +8,6 @@ on:
 
 env:
   DOCKER_IMAGE_NAME: docker-cicd-demo
-  DOCKER_REGISTRY: docker.io
 
 jobs:
   build-and-test:
@@ -35,16 +34,17 @@ jobs:
         npm test
         kill $APP_PID
 
-    # ✅ FIX 1: Strong cleanup (prevents port 3000 issues)
-    - name: Cleanup Docker system (FIX PORT ISSUE)
+    # 🔥 FIX: full cleanup before docker
+    - name: Cleanup Docker system
       run: |
+        docker compose down -v || true
         docker ps -aq | xargs -r docker rm -f || true
         docker network prune -f || true
 
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
 
-    # ✅ FIX 2: Ensure image is available locally
+    # Build image locally
     - name: Build Docker image
       uses: docker/build-push-action@v5
       with:
@@ -52,46 +52,40 @@ jobs:
         push: false
         tags: ${{ env.DOCKER_IMAGE_NAME }}:test
         load: true
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
 
-    # ✅ FIX 3: Avoid port conflict (3001 instead of 3000)
+    # Run container WITHOUT host port (FIX)
     - name: Test Docker image
       run: |
-        docker run -d -p 3001:3000 --name test-container ${{ env.DOCKER_IMAGE_NAME }}:test
+        docker run -d --name test-container ${{ env.DOCKER_IMAGE_NAME }}:test
         sleep 10
-        curl -f http://localhost:3001/health || exit 1
+        docker exec test-container curl -f http://localhost:3000/health || exit 1
         docker stop test-container
         docker rm test-container
 
-    # Compose image replacement (safe)
-    - name: Create test environment with Docker Compose
+    # Replace build with image
+    - name: Prepare docker compose
       run: |
         sed -i 's/build: \./image: ${{ env.DOCKER_IMAGE_NAME }}:test/' docker-compose.yml
 
-    # ✅ FIX 4: clean environment before compose
-    - name: Cleanup before Docker Compose
-      run: |
-        docker ps -aq | xargs -r docker rm -f || true
-        docker network prune -f || true
-
+    # Start compose (NO PORT CONFLICT)
     - name: Start services with Docker Compose
       run: |
         docker compose up -d
         sleep 15
 
-    - name: Test Docker Compose services
+    # Test using internal network (FIX)
+    - name: Test services
       run: |
-        curl -f http://localhost:3000/health || exit 1
-        curl -f http://localhost:8080/health || exit 1
+        docker exec docker-cicd-demo-app-1 curl -f http://localhost:3000/health || exit 1
+        docker exec docker-cicd-demo-nginx-1 curl -f http://localhost/health || exit 1
 
-    - name: Check service logs
+    - name: Show logs
       if: always()
       run: |
         docker compose logs app
         docker compose logs nginx
 
-    - name: Cleanup Docker Compose
+    - name: Cleanup
       if: always()
       run: |
         docker compose down -v
@@ -100,7 +94,7 @@ jobs:
   build-and-push:
     needs: build-and-test
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    if: github.ref == 'refs/heads/main'
 
     steps:
     - name: Checkout repository
@@ -115,22 +109,9 @@ jobs:
         username: ${{ secrets.DOCKER_USERNAME }}
         password: ${{ secrets.DOCKER_PASSWORD }}
 
-    - name: Extract metadata
-      id: meta
-      uses: docker/metadata-action@v5
-      with:
-        images: ${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_IMAGE_NAME }}
-        tags: |
-          type=ref,event=branch
-          type=sha,prefix={{branch}}-
-          type=raw,value=latest,enable={{is_default_branch}}
-
-    - name: Build and push Docker image
+    - name: Build and push image
       uses: docker/build-push-action@v5
       with:
-        context: .  
+        context: .
         push: true
-        tags: ${{ steps.meta.outputs.tags }}
-        labels: ${{ steps.meta.outputs.labels }}
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
+        tags: ${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_IMAGE_NAME }}:latest
